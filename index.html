@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Rumor Spreading Simulation</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      /* Grid cell styles */
+      .cell {
+        width: 8px;
+        height: 8px;
+        display: inline-block;
+        /* border: 1px solid #ccc; */
+      }
+
+      .cell.level-0 {
+        background-color: #fff; /* white */
+      }
+
+      .cell.level-1 {
+        background-color: #ff0000; /* red */
+      }
+
+      .cell.level-2 {
+        background-color: #ffa500; /* orange */
+      }
+
+      .cell.level-3 {
+        background-color: #ffff00; /* yellow */
+      }
+
+      .cell.level-4 {
+        background-color: #808080; /* gray */
+      }
+
+      .cell-exposed {
+        background-color: #3E4DAD;
+      }
+
+      /* Panel styles */
+      .panel {
+        width: 200px;
+        padding: 10px;
+        background-color: #f0f0f0;
+        float: right;
+      }
+
+      .panel label {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      .panel input {
+        width: 100%;
+        margin-bottom: 10px;
+      }
+
+      .panel button {
+        margin-right: 5px;
+      }
+
+      .error {
+        color: red;
+        margin-top: 5px;
+      }
+
+      .selected-speed {
+        background-color: rgb(138, 138, 138);
+      }
+    </style>
+  </head>
+
+  <body style="height: 100%">
+    <div style="display: flex; height: 100%">
+      <div
+        style="
+          flex: 1;
+          height: 100%;
+          background-color: #f0f0f0;
+          display: flex;
+          flex-direction: column;
+        "
+      >
+        <canvas id="spread-chart"></canvas>
+        <canvas id="pie-chart"></canvas>
+      </div>
+      <div
+        id="app"
+        style="
+          flex: 2;
+          height: 100%;
+          background-color: #f0f0f0;
+          display: flex;
+          flex-direction: row;
+        "
+      >
+        <div style="flex: 2; height: 100%; background-color: #d0d0d0">
+          <div style="display: flex; flex-flow: row wrap">
+            <div>
+              <div>
+                <button @click="restart" :disabled="error">Restart</button>
+                <button
+                  @click="toggleSimulation"
+                  :disabled="generation >= numGenerations || error"
+                >
+                  {{ running ? 'Pause' : 'Start' }}
+                </button>
+                <button @click="runGeneration" :disabled="running || generation >= numGenerations">Next</button>
+                <button
+                  @click="changeSpeed(2000)"
+                  :class="{'selected-speed': interval === 2000}"
+                >
+                  x0.25
+                </button>
+                <button
+                  @click="changeSpeed(1000)"
+                  :class="{'selected-speed': interval === 1000}"
+                >
+                  x0.5
+                </button>
+                <button
+                  @click="changeSpeed(500)"
+                  :class="{'selected-speed': interval === 500}"
+                >
+                  x1.0
+                </button>
+                <button
+                  @click="changeSpeed(333)"
+                  :class="{'selected-speed': interval === 333}"
+                >
+                  x1.5
+                </button>
+                <button
+                  @click="changeSpeed(250)"
+                  :class="{'selected-speed': interval === 250}"
+                >
+                  x2.0
+                </button>
+                <span style="margin: 5px">Generation: {{ generation }}</span>
+                <span style="margin: 5px"
+                  >Population Size: {{ populationSize }}</span
+                >
+                <span style="margin: 5px"
+                  >Exposed: {{ exposedToRumorCount }} ({{
+                  exposedToRumorPrecent.toFixed(2)}})%</span
+                >
+              </div>
+              <div style="border: 1px solid gray; width: 800px; height: 800px">
+                <div
+                  v-for="(row, rowIndex) in grid"
+                  :key="rowIndex"
+                  style="display: flex; flex-flow: row"
+                >
+                  <div
+                    v-for="(cell, cellIndex) in row"
+                    :key="`${rowIndex},${cellIndex}`"
+                    class="cell"
+                    :class="(showExposed && cell.exposedToRumor) ? 'cell-exposed' : ('level-' + cell.state)"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div
+          style="
+            flex: 1;
+            background-color: #e0e0e0;
+            display: flex;
+            flex-flow: column;
+            padding: 30px;
+          "
+        >
+          <label for="numGenerationsRange"
+            >Number of Generations: {{numGenerations}}</label
+          >
+          <input
+            type="range"
+            id="numGenerationsRange"
+            v-model="numGenerations"
+            min="1"
+            max="500"
+            :disabled="running || generation"
+          />
+          <label for="lrange">L: {{L}}</label>
+          <input
+            type="range"
+            id="lRange"
+            v-model="L"
+            min="0"
+            max="25"
+            :disabled="running || generation"
+          />
+          <label for="pRange">P: {{P}}</label>
+          <input
+            type="range"
+            id="pRange"
+            min="0"
+            max="1"
+            step="0.01"
+            @input="restart"
+            v-model="P"
+            :disabled="running || generation"
+          />
+          <div style="display: flex; margin: 15px;">
+            <input id="showExposed" type="checkbox" v-model="showExposed" />
+            <label for="showExposed">Show Exposed (received a rumor)</label>
+          </div>
+
+          <div style="display: flex; margin: 10px">
+            <input
+              type="radio"
+              id="non-custom"
+              :value="false"
+              :disabled="running || generation"
+              @click="handleRadioNonCustom"
+              v-model="useCustomDist"
+            />
+            <label for="non-custom">Choose Population Distribution:</label>
+          </div>
+          <select
+            name="dist"
+            id="dist"
+            :value="selectedDist"
+            @input="changeDist"
+            :disabled="running || generation || useCustomDist"
+          >
+            <option value="0.25,0.25,0.25,0.25">Uniform (25% for all)</option>
+            <option value="0.6,0.2,0.1,0.1">
+              S1: 60% | S2: 20% | S3: 10% | S4: 10%
+            </option>
+            <option value="0.5,0.2,0.15,0.15">
+              S1: 50% | S2: 20% | S3: 15% | S4: 15%
+            </option>
+            <option value="0.3,0.3,0.3,0.1">
+              S1: 30% | S2: 30% | S3: 30% | S4: 10%
+            </option>
+            <option value="0.15,0.15,0.20,0.5">
+              S1: 15% | S2: 15% | S3: 20% | S4: 50%
+            </option>
+            <option value="0.1,0.1,0.2,0.6">
+              S1: 10% | S2: 10% | S3: 20% | S4: 60%
+            </option>
+          </select>
+
+          <div style="display: flex; margin: 15px">
+            <input
+              type="radio"
+              id="custom"
+              :disabled="running || generation"
+              :value="true"
+              v-model="useCustomDist"
+            />
+            <label for="custom"
+              >Custom Distribution: (Enter values between 0 - 1)</label
+            >
+          </div>
+
+          <label for="p1">S1</label>
+          <input
+            type="text"
+            id="p1"
+            :disabled="running || generation || !useCustomDist"
+            v-model.number="dist[0]"
+          />
+          <label for="p2">S2</label>
+          <input
+            type="text"
+            id="p2"
+            :disabled="running || generation || !useCustomDist"
+            v-model.number="dist[1]"
+          />
+          <label for="p2">S3</label>
+          <input
+            type="text"
+            id="p2"
+            :disabled="running || generation || !useCustomDist"
+            v-model.number="dist[2]"
+          />
+          <label for="p4">S4</label>
+          <input
+            type="text"
+            id="p4"
+            :disabled="running || generation || !useCustomDist"
+            v-model.number="dist[3]"
+          />
+          <button
+            @click="restart"
+            style="width: 70px; margin: 15px"
+            :disabled="running || generation || !useCustomDist || error"
+          >
+            apply
+          </button>
+          <div class="error" v-if="error">Invalid values (must sum to 1)</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Helper function to get a random integer within a range
+      function getRandomInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
+      // init chart
+      const labels = Array.from({ length: 100 }, (_, index) => index);
+      const pieChart = new Chart(document.getElementById("pie-chart"), {
+        type: "pie",
+        data: {
+          labels: ["S1", "S2", "S3", "S4"],
+          datasets: [
+            {
+              label: "Precent",
+              data: [0, 0, 0, 0],
+              backgroundColor: ["#ff0000", "#ffa500", "#ffff00", "#808080"],
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: "top",
+            },
+            title: {
+              display: true,
+              text: "Population Distribution",
+            },
+          },
+        },
+      });
+      const chart = new Chart(document.getElementById("spread-chart"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Exposed",
+              data: [],
+              borderColor: "#3E4DAD",
+              backgroundColor: "#3E4DAD",
+            },
+            {
+              label: "S1",
+              data: [],
+              borderColor: "#ff0000",
+              backgroundColor: "#ff0000",
+            },
+            {
+              label: "S2",
+              data: [],
+              borderColor: "#ffa500",
+              backgroundColor: "#ffa500",
+            },
+            {
+              label: "S3",
+              data: [],
+              borderColor: "#ffff00",
+              backgroundColor: "#ffff00",
+            },
+            {
+              label: "S4",
+              data: [],
+              borderColor: "#808080",
+              backgroundColor: "#808080",
+            },
+          ],
+        },
+        options: {
+          animation: {
+            duration: 0,
+          },
+          elements: {
+            point: {
+              radius: 0,
+            },
+          },
+          responsive: true,
+          plugins: {
+            legend: {
+              position: "top",
+            },
+            title: {
+              display: true,
+              text: "Rumor spread rate",
+            },
+          },
+        },
+      });
+
+      // Vue app
+      const app = Vue.createApp({
+        data() {
+          return {
+            grid: Array.from({ length: 100 }, () =>
+              Array.from({ length: 100 }, () => ({
+                state: 0,
+                originalState: 0,
+                lcounter: 0,
+                spreadRumor: false,
+                exposedToRumor: false,
+              }))
+            ), // 2D grid representing the people and their states
+            running: false, // Flag to indicate if the simulation is running
+            generation: 0, // Current generation count
+            numGenerations: 100, // Number of generations to simulate
+            P: 0.1,
+            selectedDist: "0.25,0.25,0.25,0.25",
+            useCustomDist: false,
+            dist: [0.25, 0.25, 0.25, 0.25],
+            probs: [0, 1, 2 / 3, 1 / 3, 0], // Probabilities for spreading rumors
+            L: 3, // Rest period between generations
+            interval: 500,
+            intervalId: null,
+            populationSize: 0,
+            spreadCount: {
+              1: 0,
+              2: 0,
+              3: 0,
+              4: 0,
+            },
+            exposedToRumorCount: 0,
+            showExposed: false,
+          };
+        },
+        watch: {
+          numGenerations(newVal) {
+            chart.data.labels = Array.from(
+              { length: newVal },
+              (_, index) => index
+            );
+            chart.update();
+          },
+        },
+        computed: {
+          error() {
+            for (let i = 0; i < this.dist.length; i++) {
+              if (this.dist[i] < 0 || this.dist[i] > 1) {
+                return true;
+              }
+            }
+            const sum = this.dist.reduce((partialSum, a) => partialSum + a, 0);
+            if (sum < 0.999999 || sum > 1.000001) {
+              return true;
+            }
+            return false;
+          },
+          exposedToRumorPrecent() {
+            if (this.populationSize === 0) {
+                return 0;
+            }
+            return (this.exposedToRumorCount / this.populationSize) * 100;
+          },
+          spreadPrecent() {
+            if (this.populationSize === 0) {
+              return {
+                1: 0,
+                2: 0,
+                3: 0,
+                4: 0,
+              };
+            }
+            return {
+              1: (this.spreadCount[1] / this.populationSize) * 100,
+              2: (this.spreadCount[2] / this.populationSize) * 100,
+              3: (this.spreadCount[3] / this.populationSize) * 100,
+              4: (this.spreadCount[4] / this.populationSize) * 100,
+            };
+          },
+        },
+        mounted() {
+          this.initGrid(); // Initialize the grid when the app is mounted
+        },
+        methods: {
+          changeDist(event) {
+            this.selectedDist = event.target.value;
+            this.dist = event.target.value.split(",").map((n) => Number(n));
+            this.restart();
+          },
+          handleRadioNonCustom() {
+            if (this.dist.join(",") !== this.selectedDist) {
+              this.dist = [0.25, 0.25, 0.25, 0.25];
+              this.selectedDist = this.dist.join(",");
+              this.restart();
+            }
+          },
+          // Method to initialize the grid
+          initGrid() {
+            let populationSize = 0;
+            for (let i = 0; i < 100; i++) {
+              for (let j = 0; j < 100; j++) {
+                const randomState = this.selectRandomIndex(this.dist);
+                this.grid[i][j] = {
+                  state: randomState,
+                  originalState: randomState,
+                  lcounter: 0,
+                  exposedToRumor: false,
+                  spreadRumor: false,
+                };
+                if (randomState !== 0) {
+                  populationSize++;
+                }
+                this.spreadCount[randomState]++;
+              }
+            }
+            this.populationSize = populationSize;
+
+            chart.data.datasets[0].data = [];
+            chart.data.datasets[1].data = [];
+            chart.data.datasets[2].data = [];
+            chart.data.datasets[3].data = [];
+            chart.data.datasets[4].data = [];
+            this.updateCharts();
+            // select random person to start spreading the rumor
+            let retry_count = 0;
+            let i = Math.floor(Math.random() * 100);
+            let j = Math.floor(Math.random() * 100);
+            while (this.grid[i][j].state == 0 && retry_count <= 100) {
+              i = Math.floor(Math.random() * 100);
+              j = Math.floor(Math.random() * 100);
+              retry_count++;
+            }
+            this.grid[i][j].spreadRumor = true;
+            this.grid[i][j].exposedToRumor = true;
+            this.exposedToRumorCount = 1;
+          },
+          updateCharts() {
+            chart.data.datasets[0].data.push(this.exposedToRumorPrecent);
+            chart.data.datasets[1].data.push(this.spreadPrecent[1]);
+            chart.data.datasets[2].data.push(this.spreadPrecent[2]);
+            chart.data.datasets[3].data.push(this.spreadPrecent[3]);
+            chart.data.datasets[4].data.push(this.spreadPrecent[4]);
+            chart.update();
+            pieChart.data.datasets[0].data[0] = this.spreadPrecent[1];
+            pieChart.data.datasets[0].data[1] = this.spreadPrecent[2];
+            pieChart.data.datasets[0].data[2] = this.spreadPrecent[3];
+            pieChart.data.datasets[0].data[3] = this.spreadPrecent[4];
+            pieChart.update();
+          },
+          // Method to restart the simulation
+          restart() {
+            this.running = false;
+            if (this.intervalId !== null) {
+              clearInterval(this.intervalId);
+            }
+            this.generation = 0;
+            this.spreadCount = {
+              1: 0,
+              2: 0,
+              3: 0,
+              4: 0,
+            };
+            this.populationSize = 0;
+            this.initGrid();
+          },
+          // Method to toggle the simulation between start and pause
+          toggleSimulation() {
+            // Start the simulation
+            if (this.running) {
+              clearInterval(this.intervalId);
+              this.intervalId = null;
+            } else {
+              this.intervalId = setInterval(this.runGeneration, this.interval);
+            }
+            this.running = !this.running;
+          },
+          // Method to run the simulation
+          runGeneration() {
+            if (this.generation >= this.numGenerations) {
+              // Stop the simulation if the desired number of generations has been reached
+              this.running = false;
+              if (this.intervalId !== null) {
+                clearInterval(this.intervalId);
+                this.intervalId = null;
+              }
+              return;
+            }
+
+            // Update the grid for the current generation
+            const newGrid = [];
+            const newSpreadCount = {
+              1: 0,
+              2: 0,
+              3: 0,
+              4: 0,
+            };
+            for (let i = 0; i < 100; i++) {
+              const row = [];
+              for (let j = 0; j < 100; j++) {
+                const {
+                  newState,
+                  shouldSpreadRumor,
+                  newlcounter,
+                  exposedToRumor,
+                } = this.getNewState(i, j);
+                row.push({
+                  state: newState,
+                  originalState: this.grid[i][j].originalState,
+                  lcounter: newlcounter,
+                  spreadRumor: shouldSpreadRumor,
+                  exposedToRumor,
+                });
+                newSpreadCount[newState]++;
+                if (
+                  newState !== 0 &&
+                  exposedToRumor !== this.grid[i][j].exposedToRumor
+                ) {
+                  this.exposedToRumorCount++;
+                }
+              }
+              newGrid.push(row);
+            }
+            this.grid = newGrid;
+            this.spreadCount = newSpreadCount;
+            this.updateCharts();
+            // Increment the generation count
+            this.generation++;
+          },
+          // Method to get the next state of a person based on its current state and its neighbors' states
+          getNewState(row, col) {
+            const currentState = this.grid[row][col].state;
+            let exposedToRumor = this.grid[row][col].exposedToRumor;
+
+            if (currentState === 0) {
+              return {
+                newState: 0,
+                shouldSpreadRumor: false,
+                newlcounter: 0,
+                exposedToRumor: false,
+              };
+            }
+
+            const neighbors = [];
+            let rumorCount = 0;
+
+            // Get the states of the eight neighboring cells
+            for (let i = row - 1; i <= row + 1; i++) {
+              for (let j = col - 1; j <= col + 1; j++) {
+                if (i === row && j === col) continue; // Skip the current cell
+                if (i < 0 || i >= 100 || j < 0 || j >= 100) continue; // Skip out-of-bounds cells
+                if (this.grid[i][j].state === 0) continue;
+                if (this.grid[i][j].spreadRumor === true) {
+                  rumorCount++;
+                }
+              }
+            }
+
+            let newState = currentState;
+            let shouldSpreadRumor = false;
+            let newlcounter = this.grid[row][col].lcounter;
+
+            // decrease/increase level of skepticism
+            if (rumorCount >= 2) {
+              if (currentState > 1) newState--;
+            } else {
+              if (currentState < this.grid[row][col].originalState) newState++;
+            }
+
+            // determine if should spread rumor
+            if (this.grid[row][col].lcounter == 0) {
+              if (rumorCount > 0) {
+                if (Math.random() < this.probs[this.grid[row][col].state]) {
+                  shouldSpreadRumor = true;
+                  newlcounter = this.L;
+                }
+              }
+            } else {
+              newlcounter--;
+            }
+
+            exposedToRumor = exposedToRumor || rumorCount > 0;
+
+            return { newState, shouldSpreadRumor, newlcounter, exposedToRumor };
+          },
+          changeSpeed(interval) {
+            if (this.intervalId !== null) {
+              clearInterval(this.intervalId);
+              this.intervalId = null;
+            }
+            this.interval = interval;
+            if (this.running) {
+              this.intervalId = setInterval(this.runGeneration, this.interval);
+            }
+          },
+          selectRandomIndex(probs) {
+            // decide if there should be a person or not
+            if (Math.random() < this.P) {
+              return 0;
+            }
+
+            // Generate a random number between 0 and 1
+            const rand = Math.random();
+
+            let cumulativeProb = 0;
+            for (let i = 0; i < probs.length; i++) {
+              // Add the probability of the current index to the cumulative probability
+              cumulativeProb += probs[i];
+
+              // If the cumulative probability is greater than the random number,
+              // return the current index
+              if (cumulativeProb > rand) {
+                return i + 1;
+              }
+            }
+
+            // If no index is selected, return the last index
+            return probs.length;
+          },
+        },
+      });
+
+      // Mount the Vue app to an element with the ID "app"
+      app.mount("#app");
+    </script>
+  </body>
+</html>
