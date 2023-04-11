@@ -34,7 +34,7 @@
       }
 
       .cell-exposed {
-        background-color: #3E4DAD;
+        background-color: #3e4dad;
       }
 
       /* Panel styles */
@@ -66,6 +66,10 @@
 
       .selected-speed {
         background-color: rgb(138, 138, 138);
+      }
+
+      .selected-color {
+        box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.487);
       }
     </style>
   </head>
@@ -105,7 +109,12 @@
                 >
                   {{ running ? 'Pause' : 'Start' }}
                 </button>
-                <button @click="runGeneration" :disabled="running || generation >= numGenerations">Next</button>
+                <button
+                  @click="runGeneration"
+                  :disabled="running || generation >= numGenerations || error"
+                >
+                  Next
+                </button>
                 <button
                   @click="changeSpeed(2000)"
                   :class="{'selected-speed': interval === 2000}"
@@ -142,7 +151,7 @@
                 >
                 <span style="margin: 5px"
                   >Exposed: {{ exposedToRumorCount }} ({{
-                  exposedToRumorPrecent.toFixed(2)}})%</span
+                  exposedToRumorPrecent.toFixed(2)}}%)</span
                 >
               </div>
               <div style="border: 1px solid gray; width: 800px; height: 800px">
@@ -154,6 +163,9 @@
                   <div
                     v-for="(cell, cellIndex) in row"
                     :key="`${rowIndex},${cellIndex}`"
+                    @mousedown="handleMousedown(rowIndex, cellIndex)"
+                    @mouseup="handleMouseup"
+                    @mousemove="handleMousemove(rowIndex, cellIndex)"
                     class="cell"
                     :class="(showExposed && cell.exposedToRumor) ? 'cell-exposed' : ('level-' + cell.state)"
                   ></div>
@@ -196,13 +208,13 @@
             type="range"
             id="pRange"
             min="0"
-            max="1"
+            max="0.99"
             step="0.01"
             @input="restart"
             v-model="P"
             :disabled="running || generation"
           />
-          <div style="display: flex; margin: 15px;">
+          <div style="display: flex; margin: 15px">
             <input id="showExposed" type="checkbox" v-model="showExposed" />
             <label for="showExposed">Show Exposed (received a rumor)</label>
           </div>
@@ -292,6 +304,72 @@
             apply
           </button>
           <div class="error" v-if="error">Invalid values (must sum to 1)</div>
+          <div style="display: flex; margin: 15px">
+            <input
+              id="editMode"
+              type="checkbox"
+              v-model="editMode"
+              :disabled="running || generation"
+            />
+            <label for="editMode">Edit Mode</label>
+          </div>
+          <div v-show="editMode" style="display: flex; flex-flow: row">
+            <div
+              :class="{'selected-color' : this.selectedState === 1}"
+              @click="selectedState = 1"
+              style="
+                width: 30px;
+                height: 30px;
+                margin: 5px;
+                border-radius: 25px;
+                background-color: red;
+              "
+            ></div>
+            <div
+              :class="{'selected-color' : this.selectedState === 2}"
+              @click="selectedState = 2"
+              style="
+                width: 30px;
+                height: 30px;
+                margin: 5px;
+                border-radius: 25px;
+                background-color: orange;
+              "
+            ></div>
+            <div
+              :class="{'selected-color' : this.selectedState === 3}"
+              @click="selectedState = 3"
+              style="
+                width: 30px;
+                height: 30px;
+                margin: 5px;
+                border-radius: 25px;
+                background-color: yellow;
+              "
+            ></div>
+            <div
+              :class="{'selected-color' : this.selectedState === 4}"
+              @click="selectedState = 4"
+              style="
+                width: 30px;
+                height: 30px;
+                margin: 5px;
+                border-radius: 25px;
+                background-color: gray;
+              "
+            ></div>
+            <div
+              :class="{'selected-color' : this.selectedState === 0}"
+              @click="selectedState = 0"
+              style="
+                width: 30px;
+                height: 30px;
+                margin: 5px;
+                border-radius: 25px;
+                background-color: white;
+              "
+            ></div>
+          </div>
         </div>
       </div>
     </div>
@@ -421,6 +499,9 @@
             },
             exposedToRumorCount: 0,
             showExposed: false,
+            editMode: false,
+            selectedState: 0,
+            isMousedown: false,
           };
         },
         watch: {
@@ -430,6 +511,16 @@
               (_, index) => index
             );
             chart.update();
+          },
+          running(newVal) {
+            if (newVal) {
+              this.editMode = false;
+            }
+          },
+          generation(newVal) {
+            if (newVal > 0 && this.editMode) {
+              this.editMode = false;
+            }
           },
         },
         computed: {
@@ -447,7 +538,7 @@
           },
           exposedToRumorPrecent() {
             if (this.populationSize === 0) {
-                return 0;
+              return 0;
             }
             return (this.exposedToRumorCount / this.populationSize) * 100;
           },
@@ -479,9 +570,50 @@
           },
           handleRadioNonCustom() {
             if (this.dist.join(",") !== this.selectedDist) {
-              this.dist = [0.25, 0.25, 0.25, 0.25];
+              this.dist = this.selectedDist.split(",").map((n) => Number(n));
               this.selectedDist = this.dist.join(",");
               this.restart();
+            }
+          },
+          colorCell(row, col) {
+            if (this.grid[row][col].spreadRumor && this.selectedState === 0) {
+              return;
+            }
+            if (this.selectedState !== this.grid[row][col].state) {
+              if (this.selectedState === 0) this.populationSize--;
+              else if (this.grid[row][col].state === 0) this.populationSize++;
+
+              if (this.selectedState !== 0)
+                this.spreadCount[this.selectedState]++;
+              if (this.grid[row][col].state !== 0)
+                this.spreadCount[this.grid[row][col].state]--;
+
+              this.clearChart();
+              this.updateCharts();
+            }
+            let spreadRumor = this.grid[row][col].spreadRumor;
+            let exposedToRumor = this.grid[row][col].exposedToRumor;
+            this.grid[row][col] = {
+              state: this.selectedState,
+              originalState: this.selectedState,
+              lcounter: 0,
+              spreadRumor,
+              exposedToRumor,
+            };
+          },
+          handleMouseup() {
+            this.isMousedown = false;
+          },
+          handleMousedown(row, col) {
+            this.isMousedown = true;
+            if (this.editMode === false) {
+              return;
+            }
+            this.colorCell(row, col);
+          },
+          handleMousemove(row, col) {
+            if (this.isMousedown && this.editMode) {
+              this.colorCell(row, col);
             }
           },
           // Method to initialize the grid
@@ -505,24 +637,32 @@
             }
             this.populationSize = populationSize;
 
-            chart.data.datasets[0].data = [];
-            chart.data.datasets[1].data = [];
-            chart.data.datasets[2].data = [];
-            chart.data.datasets[3].data = [];
-            chart.data.datasets[4].data = [];
+            this.clearChart();
             this.updateCharts();
             // select random person to start spreading the rumor
             let retry_count = 0;
             let i = Math.floor(Math.random() * 100);
             let j = Math.floor(Math.random() * 100);
-            while (this.grid[i][j].state == 0 && retry_count <= 100) {
+            while (this.grid[i][j].state == 0 && retry_count <= 1000) {
               i = Math.floor(Math.random() * 100);
               j = Math.floor(Math.random() * 100);
               retry_count++;
             }
+            if (retry_count > 1000) {
+              this.grid[i][j].state = 1;
+              this.populationSize++;
+              this.spreadCount[1]++;
+            }
             this.grid[i][j].spreadRumor = true;
             this.grid[i][j].exposedToRumor = true;
             this.exposedToRumorCount = 1;
+          },
+          clearChart() {
+            chart.data.datasets[0].data = [];
+            chart.data.datasets[1].data = [];
+            chart.data.datasets[2].data = [];
+            chart.data.datasets[3].data = [];
+            chart.data.datasets[4].data = [];
           },
           updateCharts() {
             chart.data.datasets[0].data.push(this.exposedToRumorPrecent);
