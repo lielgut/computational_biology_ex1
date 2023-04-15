@@ -306,6 +306,15 @@
           <div class="error" v-if="error">Invalid values (must sum to 1)</div>
           <div style="display: flex; margin: 15px">
             <input
+              id="wrapAround"
+              type="checkbox"
+              v-model="wrapAround"
+              :disabled="running || generation"
+            />
+            <label for="wrapAround">Wrap Around</label>
+          </div>
+          <div style="display: flex; margin: 15px">
+            <input
               id="editMode"
               type="checkbox"
               v-model="editMode"
@@ -502,6 +511,7 @@
             editMode: false,
             selectedState: 0,
             isMousedown: false,
+            wrapAround: true
           };
         },
         watch: {
@@ -777,9 +787,16 @@
             for (let i = row - 1; i <= row + 1; i++) {
               for (let j = col - 1; j <= col + 1; j++) {
                 if (i === row && j === col) continue; // Skip the current cell
-                if (i < 0 || i >= 100 || j < 0 || j >= 100) continue; // Skip out-of-bounds cells
-                if (this.grid[i][j].state === 0) continue;
-                if (this.grid[i][j].spreadRumor === true) {
+                if (i < 0 || i >= 100 || j < 0 || j >= 100) {
+                  if (!this.wrapAround) {
+                    // Skip out-of-bounds cells
+                    continue;
+                  }
+                }
+                let newI = (i + 100) % 100;
+                let newJ = (j + 100) % 100;
+                if (this.grid[newI][newJ].state === 0) continue;
+                if (this.grid[newI][newJ].spreadRumor === true) {
                   rumorCount++;
                 }
               }
