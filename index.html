@@ -507,11 +507,12 @@
               4: 0,
             },
             exposedToRumorCount: 0,
-            showExposed: false,
+            showExposed: true,
             editMode: false,
             selectedState: 0,
             isMousedown: false,
-            wrapAround: true
+            wrapAround: true,
+            stats: [],
           };
         },
         watch: {
@@ -666,6 +667,16 @@
             this.grid[i][j].spreadRumor = true;
             this.grid[i][j].exposedToRumor = true;
             this.exposedToRumorCount = 1;
+
+            this.stats = [
+              {
+                exposedToRumorPrecent: this.exposedToRumorPrecent.toFixed(2),
+                spreadPrecentS1: this.spreadPrecent[1].toFixed(2),
+                spreadPrecentS2: this.spreadPrecent[2].toFixed(2),
+                spreadPrecentS3: this.spreadPrecent[3].toFixed(2),
+                spreadPrecentS4: this.spreadPrecent[4].toFixed(2),
+              },
+            ];
           },
           clearChart() {
             chart.data.datasets[0].data = [];
@@ -723,6 +734,13 @@
                 clearInterval(this.intervalId);
                 this.intervalId = null;
               }
+
+              console.table(this.stats);
+              let csv = "Generation,Exposed,S1,S2,S3,S4\n";
+              this.stats.forEach((stat, i) => {
+                csv += `${i},${stat.exposedToRumorPrecent},${stat.spreadPrecentS1},${stat.spreadPrecentS2},${stat.spreadPrecentS3},${stat.spreadPrecentS4}\n`;
+              });
+              console.log(csv);
               return;
             }
 
@@ -765,6 +783,14 @@
             this.updateCharts();
             // Increment the generation count
             this.generation++;
+
+            this.stats.push({
+              exposedToRumorPrecent: this.exposedToRumorPrecent.toFixed(2),
+              spreadPrecentS1: this.spreadPrecent[1].toFixed(2),
+              spreadPrecentS2: this.spreadPrecent[2].toFixed(2),
+              spreadPrecentS3: this.spreadPrecent[3].toFixed(2),
+              spreadPrecentS4: this.spreadPrecent[4].toFixed(2),
+            });
           },
           // Method to get the next state of a person based on its current state and its neighbors' states
           getNewState(row, col) {
