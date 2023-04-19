@@ -511,7 +511,7 @@
             editMode: false,
             selectedState: 0,
             isMousedown: false,
-            wrapAround: true,
+            wrapAround: false,
             stats: [],
           };
         },
@@ -736,11 +736,6 @@
               }
 
               console.table(this.stats);
-              let csv = "Generation,Exposed,S1,S2,S3,S4\n";
-              this.stats.forEach((stat, i) => {
-                csv += `${i},${stat.exposedToRumorPrecent},${stat.spreadPrecentS1},${stat.spreadPrecentS2},${stat.spreadPrecentS3},${stat.spreadPrecentS4}\n`;
-              });
-              console.log(csv);
               return;
             }
 
