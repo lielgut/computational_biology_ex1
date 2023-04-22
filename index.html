@@ -222,7 +222,19 @@
           <div style="display: flex; margin: 10px">
             <input
               type="radio"
+              id="clusterize"
+              name="radio"
+              :value="false"
+              :disabled="running || generation"
+              @click="handleRadioClusterize"
+            />
+            <label for="clusterize">Clusters</label>
+          </div>
+          <div style="display: flex; margin: 10px">
+            <input
+              type="radio"
               id="non-custom"
+              name="radio"
               :value="false"
               :disabled="running || generation"
               @click="handleRadioNonCustom"
@@ -259,8 +271,10 @@
             <input
               type="radio"
               id="custom"
+              name="radio"
               :disabled="running || generation"
               :value="true"
+              @click="handleRadioCustom"
               v-model="useCustomDist"
             />
             <label for="custom"
@@ -512,6 +526,7 @@
             selectedState: 0,
             isMousedown: false,
             wrapAround: false,
+            clusterize: false,
             stats: [],
           };
         },
@@ -579,12 +594,26 @@
             this.dist = event.target.value.split(",").map((n) => Number(n));
             this.restart();
           },
+          handleRadioCustom() {
+            if (this.clusterize) {
+              this.clusterize = false;
+              this.restart();
+            }
+          },
           handleRadioNonCustom() {
+            if (this.clusterize) {
+              this.clusterize = false;
+              this.restart();
+            }
             if (this.dist.join(",") !== this.selectedDist) {
               this.dist = this.selectedDist.split(",").map((n) => Number(n));
               this.selectedDist = this.dist.join(",");
               this.restart();
             }
+          },
+          handleRadioClusterize() {
+            this.clusterize = true;
+            this.restart();
           },
           colorCell(row, col) {
             if (this.grid[row][col].spreadRumor && this.selectedState === 0) {
@@ -632,7 +661,11 @@
             let populationSize = 0;
             for (let i = 0; i < 100; i++) {
               for (let j = 0; j < 100; j++) {
-                const randomState = this.selectRandomIndex(this.dist);
+                let randomState = this.selectRandomIndex(this.dist);
+                if (this.clusterize && randomState !== 0) {
+                  randomState =
+                    i < j ? ((i + j) % 2 ? 1 : 2) : (i + j) % 2 ? 3 : 4;
+                }
                 this.grid[i][j] = {
                   state: randomState,
                   originalState: randomState,
@@ -651,18 +684,22 @@
             this.clearChart();
             this.updateCharts();
             // select random person to start spreading the rumor
-            let retry_count = 0;
-            let i = Math.floor(Math.random() * 100);
-            let j = Math.floor(Math.random() * 100);
-            while (this.grid[i][j].state == 0 && retry_count <= 1000) {
+            let i = 0;
+            let j = 99;
+            if (!this.clusterize) {
               i = Math.floor(Math.random() * 100);
               j = Math.floor(Math.random() * 100);
-              retry_count++;
-            }
-            if (retry_count > 1000) {
-              this.grid[i][j].state = 1;
-              this.populationSize++;
-              this.spreadCount[1]++;
+              let retry_count = 0;
+              while (this.grid[i][j].state == 0 && retry_count <= 1000) {
+                i = Math.floor(Math.random() * 100);
+                j = Math.floor(Math.random() * 100);
+                retry_count++;
+              }
+              if (retry_count > 1000) {
+                this.grid[i][j].state = 1;
+                this.populationSize++;
+                this.spreadCount[1]++;
+              }
             }
             this.grid[i][j].spreadRumor = true;
             this.grid[i][j].exposedToRumor = true;
